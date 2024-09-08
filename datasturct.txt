@@ -1,0 +1,56 @@
+-- 用户表
+CREATE TABLE users (
+    uid UUID PRIMARY KEY,
+    username VARCHAR(255) NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 用户设置表
+CREATE TABLE user_settings (
+    uid UUID REFERENCES users(uid),
+    setting_name VARCHAR(255) NOT NULL,
+    setting_value VARCHAR(255),
+    PRIMARY KEY (uid, setting_name)
+);
+
+-- 词库信息表
+CREATE TABLE wordlists (
+    wordlist_id UUID PRIMARY KEY,
+    user_uid UUID REFERENCES users(uid),
+    wordlist_name VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 单词表
+CREATE TABLE words (
+    word_id UUID PRIMARY KEY,
+    word VARCHAR(255) NOT NULL,
+    UNIQUE(word)
+);
+
+-- 词库单词关联表
+CREATE TABLE wordlist_words (
+    wordlist_id UUID REFERENCES wordlists(wordlist_id),
+    word_id UUID REFERENCES words(word_id),
+    PRIMARY KEY (wordlist_id, word_id)
+);
+
+-- 用户进度表
+CREATE TABLE user_progress (
+    progress_id UUID PRIMARY KEY,
+    user_uid UUID REFERENCES users(uid),
+    wordlist_id UUID REFERENCES wordlists(wordlist_id),
+    word_id UUID REFERENCES words(word_id),
+    status VARCHAR(20) CHECK (status IN ('unheard', 'mastered', 'wrong')),
+    last_practiced TIMESTAMP WITH TIME ZONE,
+    UNIQUE (user_uid, wordlist_id, word_id)
+);
+
+-- 索引
+CREATE INDEX idx_wordlist_words_wordlist ON wordlist_words(wordlist_id);
+CREATE INDEX idx_wordlist_words_word ON wordlist_words(word_id);
+CREATE INDEX idx_user_progress_user_wordlist ON user_progress(user_uid, wordlist_id);
+CREATE INDEX idx_user_progress_status ON user_progress(status);

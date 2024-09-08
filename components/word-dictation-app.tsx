@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Play, SkipBack, Settings, User, RefreshCw, Upload, X } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -26,6 +26,12 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useToast } from "@/hooks/use-toast"
 
+interface WordList {
+  id: string;
+  name: string;
+  words: string[];
+}
+
 export function WordDictationApp() {
   const [currentWord, setCurrentWord] = useState("")
   const [userInput, setUserInput] = useState("")
@@ -47,6 +53,16 @@ export function WordDictationApp() {
   const [uploadedWords, setUploadedWords] = useState<string[]>([])
   const { toast } = useToast()
   const [wordListName, setWordListName] = useState("")
+  const [wordLists, setWordLists] = useState<WordList[]>([])
+  const [selectedWordList, setSelectedWordList] = useState<string>('Basic')
+
+  useEffect(() => {
+    // 从 localStorage 加载词库
+    const savedWordLists = localStorage.getItem('wordLists')
+    if (savedWordLists) {
+      setWordLists(JSON.parse(savedWordLists))
+    }
+  }, [])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -71,24 +87,54 @@ export function WordDictationApp() {
   }
 
   const handleImport = () => {
-    // Simulating an API call
-    setTimeout(() => {
-      const success = Math.random() > 0.5 // Simulate success/failure
-      if (success) {
-        setImportDialogOpen(false)
-        toast({
-          title: "Import Successful",
-          description: `${uploadedWords.length} words have been imported.`,
-        })
-      } else {
-        toast({
-          title: "Import Failed",
-          description: "There was an error importing the words. Please try again.",
-          variant: "destructive",
-        })
-      }
-    }, 1000)
+    if (!wordListName.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter a name for the word list.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const newWordList: WordList = {
+      id: Date.now().toString(),
+      name: wordListName,
+      words: uploadedWords,
+    }
+
+    const updatedWordLists = [...wordLists, newWordList]
+    setWordLists(updatedWordLists)
+    localStorage.setItem('wordLists', JSON.stringify(updatedWordLists))
+
+    setImportDialogOpen(false)
+    setWordListName("")
+    setUploadedWords([])
+
+    toast({
+      title: "Import Successful",
+      description: `${uploadedWords.length} words have been imported to "${wordListName}".`,
+    })
   }
+
+  // 修改设置组件中的词库选择
+  const WordListSelect = () => (
+    <div className="flex items-center justify-between">
+      <Label htmlFor="wordList">Word list</Label>
+      <select
+        id="wordList"
+        value={selectedWordList}
+        onChange={(e) => setSelectedWordList(e.target.value)}
+        className="border rounded p-1"
+      >
+        <option value="Basic">Basic</option>
+        <option value="Intermediate">Intermediate</option>
+        <option value="Advanced">Advanced</option>
+        {wordLists.map((list) => (
+          <option key={list.id} value={list.id}>{list.name}</option>
+        ))}
+      </select>
+    </div>
+  )
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -195,19 +241,7 @@ export function WordDictationApp() {
                       onCheckedChange={(checked) => setSettings({...settings, autoSubmit: checked})}
                     />
                   </div>
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="wordList">Word list</Label>
-                    <select
-                      id="wordList"
-                      value={settings.wordList}
-                      onChange={(e) => setSettings({...settings, wordList: e.target.value})}
-                      className="border rounded p-1"
-                    >
-                      <option>Basic</option>
-                      <option>Intermediate</option>
-                      <option>Advanced</option>
-                    </select>
-                  </div>
+                  <WordListSelect />
                 </div>
               </SheetContent>
             </Sheet>
