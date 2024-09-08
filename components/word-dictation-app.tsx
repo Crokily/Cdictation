@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Play, SkipBack, Settings, User, RefreshCw } from 'lucide-react'
+import { Play, SkipBack, Settings, User, RefreshCw, Upload, X } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
@@ -15,6 +15,16 @@ import {
 } from "@/components/ui/sheet"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { useToast } from "@/hooks/use-toast"
 
 export function WordDictationApp() {
   const [currentWord, setCurrentWord] = useState("")
@@ -33,6 +43,10 @@ export function WordDictationApp() {
     autoSubmit: false,
     wordList: "Basic"
   })
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
+  const [uploadedWords, setUploadedWords] = useState<string[]>([])
+  const { toast } = useToast()
+  const [wordListName, setWordListName] = useState("")
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -41,6 +55,39 @@ export function WordDictationApp() {
 
   const playAudio = () => {
     // Play audio logic here
+  }
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const content = e.target?.result as string
+        const words = content.split('\n').filter(word => word.trim() !== '')
+        setUploadedWords(words)
+      }
+      reader.readAsText(file)
+    }
+  }
+
+  const handleImport = () => {
+    // Simulating an API call
+    setTimeout(() => {
+      const success = Math.random() > 0.5 // Simulate success/failure
+      if (success) {
+        setImportDialogOpen(false)
+        toast({
+          title: "Import Successful",
+          description: `${uploadedWords.length} words have been imported.`,
+        })
+      } else {
+        toast({
+          title: "Import Failed",
+          description: "There was an error importing the words. Please try again.",
+          variant: "destructive",
+        })
+      }
+    }, 1000)
   }
 
   return (
@@ -52,6 +99,50 @@ export function WordDictationApp() {
             <Button variant="ghost" size="icon">
               <User className="h-6 w-6" />
             </Button>
+            <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="ghost" size="icon">
+                  <Upload className="h-6 w-6" />
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Import Word List</DialogTitle>
+                  <DialogDescription>
+                    Upload a .txt or .csv file containing your word list.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <Input
+                    type="text"
+                    placeholder="Name"
+                    value={wordListName}
+                    onChange={(e) => setWordListName(e.target.value)}
+                  />
+                  <Input
+                    type="file"
+                    accept=".txt,.csv"
+                    onChange={handleFileUpload}
+                    className="cursor-pointer"
+                  />
+                  {uploadedWords.length > 0 && (
+                    <>
+                      <ScrollArea className="h-[200px] w-full border rounded-md p-4">
+                        {uploadedWords.map((word, index) => (
+                          <div key={index} className="py-1">{word}</div>
+                        ))}
+                      </ScrollArea>
+                      <p className="text-sm text-gray-500">
+                        {uploadedWords.length} words will be imported.
+                      </p>
+                      <Button onClick={handleImport} className="w-full">
+                        Import Words
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </DialogContent>
+            </Dialog>
             <Sheet>
               <SheetTrigger asChild>
                 <Button variant="ghost" size="icon">
