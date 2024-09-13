@@ -74,14 +74,6 @@ export default function SettingsSheet({
             />
           </div>
           <div className="flex items-center justify-between">
-            <Label htmlFor="autoSubmit">自动提交</Label>
-            <Switch
-              id="autoSubmit"
-              checked={settings.autoSubmit}
-              onCheckedChange={(checked) => setSettings({...settings, autoSubmit: checked})}
-            />
-          </div>
-          <div className="flex items-center justify-between">
             <Label htmlFor="wordList">词库</Label>
             <select
               id="wordList"

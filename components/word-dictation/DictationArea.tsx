@@ -1,127 +1,180 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Play, Pause, SkipBack, RefreshCw, Volume2 } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
-import { Settings, WordList } from '@/types/wordDictation'
-import {
-  Drawer,
-  DrawerContent,
-  DrawerHeader,
-  DrawerTitle,
-  DrawerTrigger,
-} from "@/components/ui/drawer"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+import { Settings, WordList, WordHistory } from '@/types/wordDictation'
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
+import { useWordHistory } from '@/hooks/useWordHistory'
+import { useDictationAudio } from '@/hooks/useDictationAudio'
+import { useDictionary } from '@/hooks/useDictionary'
 
 interface DictationAreaProps {
   settings: Settings
   selectedWordList: WordList
 }
 
-interface WordHistory {
-  word: string
-  translation: string
-  errors: number[]
-}
+type ContinuousPlay = 'on' | 'off'
 
 export default function DictationArea({ settings, selectedWordList }: DictationAreaProps) {
   const [userInput, setUserInput] = useState("")
+  const userInputRef = useRef("")  // 新增：用于存储最新的输入值
   const [currentWordIndex, setCurrentWordIndex] = useState(0)
-  const [wordHistory, setWordHistory] = useState<WordHistory[]>([])
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
-  const [isPlaying, setIsPlaying] = useState(false)
+  const [continuousPlay, setContinuousPlay] = useState<ContinuousPlay>('off')
+  const remainingPlaysRef = useRef(0)
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
 
+  const { wordHistory, addWordToHistory, removeLastWordFromHistory } = useWordHistory()
   const currentWord = selectedWordList.words[currentWordIndex] || ""
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    const errors = compareWords(currentWord, userInput)
-    const newWordHistory: WordHistory = {
-      word: currentWord,
-      translation: "翻译待添加", // 这里需要添加翻译功能
-      errors: errors
-    }
-    setWordHistory([newWordHistory, ...wordHistory])
-    setCurrentWordIndex((prev) => prev + 1)
-    setUserInput("")
-    // 删除了这里的自动播放下一个单词的代码
-  }
+  const { playAudio, stopAudio, utteranceRef } = useDictationAudio(settings)
+  const { getTranslation, isLoading, error } = useDictionary()
 
-  const playAudio = useCallback((word: string) => {
-    const utterance = new SpeechSynthesisUtterance(word)
-    utterance.lang = settings.pronunciation === "American" ? "en-US" : "en-GB"
-    speechSynthesis.speak(utterance)
-  }, [settings.pronunciation])
+  const translation = getTranslation(currentWord)
 
-  const startContinuousPlay = useCallback(() => {
-    let count = 0
-    const play = () => {
-      if (count < settings.playCount) {
-        playAudio(currentWord)
-        count++
-        setTimeout(play, settings.interval * 1000)
+  const handleSpeechEnd = useCallback(() => {
+    if (continuousPlay === 'on') {
+      if (remainingPlaysRef.current > 0) {
+        timeoutRef.current = setTimeout(() => {
+          remainingPlaysRef.current--
+          playAudio(currentWord)
+        }, settings.interval * 1000)
       } else {
-        setIsPlaying(false)
+        // 当连续播放结束时，自动触发提交事件
+        handleSubmit()
       }
     }
-    play()
-  }, [currentWord, settings.playCount, settings.interval, playAudio])
+  }, [continuousPlay, currentWord, playAudio, settings.interval, userInput])
 
-  const togglePlay = () => {
-    if (isPlaying) {
-      speechSynthesis.cancel()
-      setIsPlaying(false)
+  useEffect(() => {
+    const utterance = utteranceRef.current
+    utterance.onend = handleSpeechEnd
+
+    return () => {
+      utterance.onend = null
+    }
+  }, [handleSpeechEnd, utteranceRef])
+
+  useEffect(() => {
+    if (continuousPlay === 'on') {
+      remainingPlaysRef.current = settings.playCount - 1
+      playAudio(currentWord)
     } else {
-      setIsPlaying(true)
-      startContinuousPlay()
+      stopAudio()
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+      }
+    }
+  }, [continuousPlay, currentWord, playAudio, settings.playCount, stopAudio])
+
+  const changeWord = (direction: 'next' | 'previous') => {
+    stopAudio()
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current)
+      timeoutRef.current = null
+    }
+
+    if (direction === 'next') {
+      setCurrentWordIndex((prev) => Math.min(prev + 1, selectedWordList.words.length - 1))
+    } else {
+      setCurrentWordIndex((prev) => {
+        const newIndex = Math.max(0, prev - 1)
+        if (newIndex !== prev) {
+          removeLastWordFromHistory()  // 只有在实际切换到上一个单词时才删除历史记录
+        }
+        return newIndex
+      })
+    }
+    setUserInput("")
+  }
+
+  const handleSubmit = (e?: React.FormEvent) => {
+    e?.preventDefault()
+    changeWord('next')
+    const errors = compareWords(currentWord, userInputRef.current)  // 使用 ref 值
+    addWordToHistory({
+      word: currentWord,
+      translation: translation,
+      errors: errors
+    })
+    // 重置连续播放状态
+    setContinuousPlay('off')
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current)
+      timeoutRef.current = null
+    }
+    // 如果还有下一个单词，开始新的连续播放
+    if (currentWordIndex < selectedWordList.words.length - 1) {
+      setContinuousPlay('on')
     }
   }
+
+  const handleSinglePlay = (word: string) => {
+    setContinuousPlay('off')
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current)
+      timeoutRef.current = null
+    }
+    stopAudio()
+    playAudio(word)
+    // 重置剩余播放次数，确保单次播放不会触发自动提交
+    remainingPlaysRef.current = settings.playCount
+  }
+
+  const togglePlay = useCallback(() => {
+    setContinuousPlay(prev => {
+      if (prev === 'off') {
+        remainingPlaysRef.current = settings.playCount - 1
+        playAudio(currentWord)
+        return 'on'
+      } else {
+        stopAudio()
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current)
+          timeoutRef.current = null
+        }
+        return 'off'
+      }
+    })
+  }, [currentWord, playAudio, settings.playCount, stopAudio])
 
   const compareWords = (correct: string, input: string): number[] => {
     const errors: number[] = []
-    for (let i = 0; i < correct.length; i++) {
-      if (correct[i] !== input[i]) {
+    const trimmedCorrect = correct.trim().toLowerCase()
+    const trimmedInput = input.trim().toLowerCase()
+    
+    for (let i = 0; i < trimmedCorrect.length; i++) {
+      if (trimmedCorrect[i] !== trimmedInput[i]) {
         errors.push(i)
       }
     }
     return errors
   }
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
-        e.preventDefault()
-        togglePlay()
-      } else if (e.code === 'ArrowLeft') {
-        setCurrentWordIndex(i => Math.max(0, i - 1))
-      } else if (e.code === 'ArrowUp') {
-        playAudio(currentWord)
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [currentWord, playAudio, togglePlay])
+  useKeyboardShortcuts({
+    togglePlay,
+    playAudio: () => handleSinglePlay(currentWord),
+    previousWord: () => changeWord('previous'),
+    nextWord: () => changeWord('next'),
+  })
 
-  const PreviousWord = ({ word, translation, errors, showLabel = true, onClick }: WordHistory & { showLabel?: boolean, onClick?: () => void }) => (
-    <div className="bg-gray-100 p-4 rounded-md hover:bg-gray-200 transition-colors cursor-pointer" onClick={onClick}>
-      {showLabel && (
-        <div className="flex justify-between items-center">
-          <p className="font-medium mb-2 text-gray-800">上一个单词:</p>
-          <Button variant="ghost" size="icon" onClick={(e) => {
-            e.stopPropagation()
-            playAudio(word)
-          }}>
-            <Volume2 className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
+  const PreviousWord = ({ word, translation, errors }: WordHistory) => (
+    <div className="bg-gray-100 p-4 rounded-md hover:bg-gray-200 transition-colors cursor-pointer" onClick={() => handleSinglePlay(word)}>
+      <div className="flex justify-between items-center">
+        <p className="font-medium mb-2 text-gray-800">上一个单词:</p>
+        <Button variant="ghost" size="icon" onClick={(e) => {
+          e.stopPropagation()
+          handleSinglePlay(word)
+        }}>
+          <Volume2 className="h-4 w-4" />
+        </Button>
+      </div>
       <p className="text-2xl mb-1">
-        {word.split('').map((char, index) => (
+        {word.split('').map((char: string, index: number) => (
           <span key={index} className={errors.includes(index) ? 'text-red-500' : 'text-gray-700'}>
             {char}
           </span>
@@ -131,93 +184,116 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
     </div>
   )
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputValue = e.target.value
+    setUserInput(inputValue)
+    userInputRef.current = inputValue  // 更新 ref 值
+
+    // 检查输入是否与当前单词完全匹配
+    if (inputValue.trim().toLowerCase() == currentWord.trim().toLowerCase()) {
+      handleSubmit()
+    }
+  }
+
   return (
     <div className="bg-white rounded-lg shadow-md p-6 max-w-2xl mx-auto">
-      <div className="text-center mb-8">
-        <form onSubmit={handleSubmit} className="flex gap-2">
-          <Input
-            type="text"
-            value={userInput}
-            onChange={(e) => setUserInput(e.target.value)}
-            placeholder="输入单词"
-            className="flex-grow text-4xl font-bold text-gray-700 border-t-0 border-x-0 border-b-2 focus:ring-0 focus:border-gray-300 placeholder-gray-300 h-20 flex items-center justify-center text-center"
-          />
-        </form>
-      </div>
+      {isLoading ? (
+        <p>加载词典中...</p>
+      ) : error ? (
+        <p>错误：{error}</p>
+      ) : (
+        <>
+          <div className="text-center mb-8">
+            <form onSubmit={handleSubmit} className="flex gap-2">
+              <Input
+                type="text"
+                value={userInput}
+                onChange={handleInputChange}
+                placeholder="输入单词"
+                className="flex-grow text-4xl font-bold text-gray-700 border-t-0 border-x-0 border-b-2 focus:ring-0 focus:border-gray-300 placeholder-gray-300 h-20 flex items-center justify-center text-center"
+              />
+            </form>
+          </div>
 
-      <div className="flex justify-center gap-4 mb-4">
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" size="icon" onClick={() => setCurrentWordIndex(i => Math.max(0, i - 1))}>
-                <SkipBack className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>返回 (←)</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+          <div className="flex justify-center gap-4 mb-4">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon" onClick={() => changeWord('previous')}>
+                    <SkipBack className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>返回 (←)</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
 
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" size="icon" onClick={togglePlay}>
-                {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>播放/暂停 (空格)</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon" onClick={togglePlay}>
+                    {continuousPlay === 'on' ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>播放/暂停 (空格)</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
 
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" size="icon" onClick={() => playAudio(currentWord)}>
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>重播 (↑)</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </div>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon" onClick={() => handleSinglePlay(currentWord)}>
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>重播 (↑)</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
 
-      <div className="mb-8 text-center">
-        <p className="text-gray-600 mb-2">{currentWordIndex + 1}/{selectedWordList.words.length}</p>
-        <Progress value={((currentWordIndex + 1) / selectedWordList.words.length) * 100} className="w-full" />
-      </div>
-
-      {wordHistory.length > 0 && (
-        <Drawer open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
-          <DrawerTrigger asChild>
-            <div onClick={() => setIsDrawerOpen(true)}>
-              <PreviousWord {...wordHistory[0]} />
-            </div>
-          </DrawerTrigger>
-          <DrawerContent>
-            <DrawerHeader>
-              <DrawerTitle>已听写的单词</DrawerTitle>
-            </DrawerHeader>
-            <div className="p-4 space-y-4">
-              {wordHistory.map((word, index) => (
-                <div key={index} className="bg-gray-100 p-4 rounded-md hover:bg-gray-200 transition-colors cursor-pointer" onClick={() => playAudio(word.word)}>
-                  <p className="text-2xl mb-1">
-                    {word.word.split('').map((char, index) => (
-                      <span key={index} className={word.errors.includes(index) ? 'text-red-500' : 'text-gray-700'}>
-                        {char}
-                      </span>
-                    ))}
-                  </p>
-                  <p className="text-gray-600">{word.translation}</p>
+          <div className="mb-8 text-center">
+            <p className="text-gray-600 mb-2">{currentWordIndex + 1}/{selectedWordList.words.length}</p>
+            <Progress value={((currentWordIndex + 1) / selectedWordList.words.length) * 100} className="w-full" />
+          </div>
+          
+          {wordHistory.length > 0 && (
+            <Drawer open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
+              <DrawerTrigger asChild>
+                <div onClick={() => setIsDrawerOpen(true)}>
+                  <PreviousWord {...wordHistory[wordHistory.length - 1]} />
                 </div>
-              ))}
-            </div>
-          </DrawerContent>
-        </Drawer>
+              </DrawerTrigger>
+              <DrawerContent>
+                <DrawerHeader>
+                  <DrawerTitle>已听写的单词</DrawerTitle>
+                </DrawerHeader>
+                <div className="flex flex-col h-[calc(50vh-2rem)] overflow-hidden">
+                  <div className="flex-grow overflow-y-auto">
+                    <div className="flex flex-col-reverse p-4 space-y-4 space-y-reverse">
+                      {wordHistory.map((word, index) => (
+                        <div key={index} className="bg-gray-100 p-4 rounded-md hover:bg-gray-200 transition-colors cursor-pointer" onClick={() => handleSinglePlay(word.word)}>
+                          <p className="text-2xl mb-1">
+                            {word.word.split('').map((char: string, charIndex: number) => (
+                              <span key={charIndex} className={word.errors.includes(charIndex) ? 'text-red-500' : 'text-gray-700'}>
+                                {char}
+                              </span>
+                            ))}
+                          </p>
+                          <p className="text-gray-600">{word.translation}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </DrawerContent>
+            </Drawer>
+          )}
+        </>
       )}
     </div>
   )

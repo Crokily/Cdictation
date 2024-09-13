@@ -8,6 +8,11 @@ export interface Settings {
   pronunciation: "American" | "British";
   playCount: number;
   interval: number;
-  autoSubmit: boolean;
   wordList: string;
+}
+
+export interface WordHistory {
+  word: string;
+  translation: string;
+  errors: number[];
 }
