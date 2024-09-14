@@ -30,7 +30,10 @@ export default function ImportDialog({ onImport }: ImportDialogProps) {
       const reader = new FileReader()
       reader.onload = (e) => {
         const content = e.target?.result as string
-        const words = content.split('\n').filter(word => word.trim() !== '')
+        const words = content
+          .split(/[\n\r]+/)
+          .map(word => word.trim())
+          .filter(word => word !== '')
         setUploadedWords(words)
       }
       reader.readAsText(file)
