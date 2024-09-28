@@ -9,6 +9,7 @@ export interface Settings {
   playCount: number;
   interval: number;
   wordList: string;
+  isRandomOrder: boolean;
 }
 
 export interface WordHistory {

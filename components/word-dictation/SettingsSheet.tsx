@@ -12,6 +12,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import { Settings as SettingsIcon } from 'lucide-react'
+import { useWordProgress } from '@/hooks/useWordProgress'
 
 interface SettingsSheetProps {
   settings: Settings
@@ -28,6 +29,14 @@ export default function SettingsSheet({
   selectedWordList,
   setSelectedWordList
 }: SettingsSheetProps) {
+  const { resetProgress } = useWordProgress()
+
+  const handleResetProgress = () => {
+    if (confirm('确定要清空所有进度吗？此操作不可撤销。')) {
+      resetProgress()
+    }
+  }
+
   return (
     <Sheet>
       <SheetTrigger asChild>
@@ -89,6 +98,19 @@ export default function SettingsSheet({
                 ))
               )}
             </select>
+          </div>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="randomOrder">乱序听写</Label>
+            <Switch
+              id="randomOrder"
+              checked={settings.isRandomOrder}
+              onCheckedChange={(checked) => setSettings({...settings, isRandomOrder: checked})}
+            />
+          </div>
+          <div className="pt-4">
+            <Button onClick={handleResetProgress} variant="destructive">
+              清空进度
+            </Button>
           </div>
         </div>
       </SheetContent>

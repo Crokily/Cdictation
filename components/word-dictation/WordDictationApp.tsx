@@ -11,7 +11,8 @@ export function WordDictationApp() {
     pronunciation: "American",
     playCount: 3,
     interval: 1,
-    wordList: ""
+    wordList: "",
+    isRandomOrder: false
   })
   const [wordLists, setWordLists] = useState<WordList[]>([])
   const [selectedWordList, setSelectedWordList] = useState<WordList | null>(null)

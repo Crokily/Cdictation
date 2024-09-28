@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Play, Pause, SkipBack, RefreshCw, Volume2 } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,6 +10,7 @@ import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useWordHistory } from '@/hooks/useWordHistory'
 import { useDictationAudio } from '@/hooks/useDictationAudio'
 import { useDictionary } from '@/hooks/useDictionary'
+import { useWordProgress } from '@/hooks/useWordProgress'
 
 interface DictationAreaProps {
   settings: Settings
@@ -28,7 +29,19 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const { wordHistory, addWordToHistory, removeLastWordFromHistory } = useWordHistory()
-  const currentWord = selectedWordList.words[currentWordIndex] || ""
+  const { wordProgress, addWord, removeIncorrectWord } = useWordProgress()
+  const correctCount = wordProgress.correctWords.length
+  const incorrectCount = wordProgress.incorrectWords.length
+
+  // 使用 useMemo 来计算 unheardWords，但只在组件挂载时计算一次
+  const unheardWordsRef = useRef<string[]>([])
+  
+  useEffect(() => {
+    const heardWords = new Set([...wordProgress.correctWords, ...wordProgress.incorrectWords])
+    unheardWordsRef.current = selectedWordList.words.filter(word => !heardWords.has(word))
+  }, []) // 空依赖数组确保只在挂载时运行一次
+
+  const currentWord = unheardWordsRef.current[currentWordIndex] || ""
 
   const { playAudio, stopAudio, utteranceRef } = useDictationAudio(settings)
   const { getTranslation, isLoading, error } = useDictionary()
@@ -79,28 +92,44 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
     }
 
     if (direction === 'next') {
-      setCurrentWordIndex((prev) => Math.min(prev + 1, selectedWordList.words.length - 1))
+      setCurrentWordIndex((prev) => Math.min(prev + 1, unheardWordsRef.current.length - 1))
     } else {
-      setCurrentWordIndex((prev) => {
-        const newIndex = Math.max(0, prev - 1)
-        if (newIndex !== prev) {
-          removeLastWordFromHistory()  // 只有在实际切换到上一个单词时才删除历史记录
-        }
-        return newIndex
-      })
+      const newIndex = Math.max(0, currentWordIndex - 1)
+      setCurrentWordIndex(newIndex)
+      if (newIndex !== currentWordIndex) {
+        removeLastWordFromHistory()  // 只有在实际切换到上一个单词时才删除历史记录
+      }
     }
     setUserInput("")
   }
 
+  const { accuracyPercentage, accuracyColor } = useMemo(() => {
+    const totalAnswers = correctCount + incorrectCount
+    const percentage = totalAnswers > 0 ? Math.round((correctCount / totalAnswers) * 100) : 0
+    let color = 'text-red-500'
+    if (percentage >= 80) {
+      color = 'text-green-500'
+    } else if (percentage >= 60) {
+      color = 'text-orange-500'
+    }
+    return { accuracyPercentage: percentage, accuracyColor: color }
+  }, [correctCount, incorrectCount])
+
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault()
-    changeWord('next')
     const errors = compareWords(currentWord, userInputRef.current)  // 使用 ref 值
     addWordToHistory({
       word: currentWord,
       translation: translation,
       errors: errors
     })
+    
+    // 更新单词进度
+    addWord(currentWord, errors.length === 0)
+
+    // 移动到下一个单词
+    changeWord('next')
+
     // 重置连续播放状态
     setContinuousPlay('off')
     if (timeoutRef.current) {
@@ -108,7 +137,7 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
       timeoutRef.current = null
     }
     // 如果还有下一个单词，开始新的连续播放
-    if (currentWordIndex < selectedWordList.words.length - 1) {
+    if (currentWordIndex < unheardWordsRef.current.length - 1) {
       setContinuousPlay('on')
     }
   }
@@ -257,8 +286,8 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
           </div>
 
           <div className="mb-8 text-center">
-            <p className="text-gray-600 mb-2">{currentWordIndex + 1}/{selectedWordList.words.length}</p>
-            <Progress value={((currentWordIndex + 1) / selectedWordList.words.length) * 100} className="w-full" />
+            <p className="text-gray-600 mb-2">{currentWordIndex + 1}/{unheardWordsRef.current.length}</p>
+            <Progress value={((currentWordIndex + 1) / unheardWordsRef.current.length) * 100} className="w-full" />
           </div>
           
           {wordHistory.length > 0 && (
@@ -293,6 +322,28 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
               </DrawerContent>
             </Drawer>
           )}
+
+          <div className="relative pt-4">
+                <div className="flex mb-2 items-center justify-between">
+                  <div>
+                  <span className={`text-xs font-semibold inline-block py-1 uppercase rounded-full ${accuracyColor} bg-opacity-20`}>
+                  Accuracy
+                </span>
+                  </div>
+                  <div className="text-right">
+                  <span className={`text-xs font-semibold inline-block ${accuracyColor}`}>
+                      {Math.round(wordProgress.correctWords.length*100 / (wordProgress.correctWords.length+wordProgress.incorrectWords.length))}%
+                    </span>
+                  </div>
+                </div>
+                <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-gray-200">
+                <div style={{ width: `${Math.round(wordProgress.correctWords.length*100 / (wordProgress.correctWords.length+wordProgress.incorrectWords.length))}%` }} className={`shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center ${accuracyColor.replace('text', 'bg')}`}></div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-600">
+                  <span>Correct: {wordProgress.correctWords.length}</span>
+                  <span>Incorrect: {wordProgress.incorrectWords.length}</span>
+                </div>
+              </div>
         </>
       )}
     </div>
