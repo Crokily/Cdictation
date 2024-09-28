@@ -58,7 +58,7 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
     setUserInput("")
 
     forceUpdate() // 强制重新渲染
-  }, [mode, selectedWordList.words, wordProgress.correctWords, wordProgress.incorrectWords])  // 根据模式和进度更新
+  }, [mode])  // 根据模式和进度更新
 
   const currentWord = unheardWordsRef.current[currentWordIndex] || ""
 
@@ -369,7 +369,8 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
               </div>
             </div>
             <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-gray-200">
-              <div style={{ width: `${accuracyPercentage}%` }} className={`shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center ${accuracyColor.replace('text', 'bg')}`}></div>
+              <div style={{ width: `${accuracyPercentage}%` }} className={`shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-green-500`}></div>
+              <div style={{ width: `${100 - accuracyPercentage}%` }} className={`shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-red-500`}></div>
             </div>
             <div className="flex justify-between text-xs text-gray-600">
               <span>Correct: {correctCount}</span>
