@@ -67,6 +67,16 @@ export function WordDictationApp() {
           </div>
         )}
       </main>
+      {/* Google tag (gtag.js) */}
+      <script async src="https://www.googletagmanager.com/gtag/js?id=G-DC39KDHPG4"></script>
+      <script>
+        {`
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-DC39KDHPG4');
+        `}
+      </script>
     </div>
   )
 }
