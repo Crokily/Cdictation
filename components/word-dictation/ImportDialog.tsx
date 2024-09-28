@@ -74,7 +74,10 @@ export default function ImportDialog({ onImport }: ImportDialogProps) {
           <DialogTitle>Import Word List</DialogTitle>
           <DialogDescription>
             Upload a .txt or .csv file containing your word list.
+            <br />
             One word per line, no definitions
+            <br />
+            word list sharing: <a href="https://t.ly/bpOD0" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">https://t.ly/bpOD0</a>
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
