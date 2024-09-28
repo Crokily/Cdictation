@@ -79,7 +79,7 @@ export default function ImportDialog({ onImport }: ImportDialogProps) {
         <div className="space-y-4">
           <Input
             type="text"
-            placeholder="Name"
+            placeholder="List Name"
             value={wordListName}
             onChange={(e) => setWordListName(e.target.value)}
           />
