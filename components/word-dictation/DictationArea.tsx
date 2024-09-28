@@ -80,8 +80,10 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
           playAudio(currentWord)
         }, settings.interval * 1000)
       } else {
-        // 当连续播放结束时，自动触发提交事件
-        handleSubmit()
+        // 当连续播放结束时，等待同样的interval时间后自动提交
+        timeoutRef.current = setTimeout(() => {
+          handleSubmit()
+        }, settings.interval * 1000)
       }
     }
   }, [continuousPlay, currentWord, playAudio, settings.interval, userInput])
