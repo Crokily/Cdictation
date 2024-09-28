@@ -44,8 +44,8 @@ export function WordDictationApp() {
       setSettings(prev => ({ ...prev, wordList: newWordList.id }))
     }
     toast({
-      title: "导入成功",
-      description: `已成功导入 ${newWordList.words.length} 个单词到 "${newWordList.name}" 词库。`,
+      title: "Import Success",
+      description: `Successfully imported ${newWordList.words.length} words into the "${newWordList.name}" word list`,
     })
   }
 
@@ -64,7 +64,7 @@ export function WordDictationApp() {
           <DictationArea settings={settings} selectedWordList={selectedWordList} />
         ) : (
           <div className="text-center text-gray-500">
-            请先导入或选择一个词库
+            Please import a word list to get started, by clicking the import button in the header.
           </div>
         )}
       </main>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, useReducer } from 'react'
 import { Play, Pause, SkipBack, RefreshCw, Volume2 } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -18,6 +18,7 @@ interface DictationAreaProps {
 }
 
 type ContinuousPlay = 'on' | 'off'
+type Mode = 'normal' | 'review'  // 新增：用于记录当前模式
 
 export default function DictationArea({ settings, selectedWordList }: DictationAreaProps) {
   const [userInput, setUserInput] = useState("")
@@ -27,19 +28,37 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
   const [continuousPlay, setContinuousPlay] = useState<ContinuousPlay>('off')
   const remainingPlaysRef = useRef(0)
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const [mode, setMode] = useState<Mode>('normal')  // 新增：用于记录当前模式
+  const [, forceUpdate] = useReducer(x => x + 1, 0)
+
 
   const { wordHistory, addWordToHistory, removeLastWordFromHistory } = useWordHistory()
   const { wordProgress, addWord, removeIncorrectWord } = useWordProgress()
-  const correctCount = wordProgress.correctWords.length
-  const incorrectCount = wordProgress.incorrectWords.length
+  // const correctCount = wordProgress.correctWords.length
+  // const incorrectCount = wordProgress.incorrectWords.length
+  const [correctCount, setcorrectCount] = useState(0)
+  const [incorrectCount, setincorrectCount] = useState(0)
 
-  // 使用 useMemo 来计算 unheardWords，但只在组件挂载时计算一次
+  // 使用 useMemo 来计算 unheardWords，但根据模式更新
   const unheardWordsRef = useRef<string[]>([])
-  
+
   useEffect(() => {
-    const heardWords = new Set([...wordProgress.correctWords, ...wordProgress.incorrectWords])
-    unheardWordsRef.current = selectedWordList.words.filter(word => !heardWords.has(word))
-  }, []) // 空依赖数组确保只在挂载时运行一次
+    if (mode === 'normal') {
+      const heardWords = new Set([...wordProgress.correctWords, ...wordProgress.incorrectWords])
+      unheardWordsRef.current = selectedWordList.words.filter(word => !heardWords.has(word))
+    } else if (mode === 'review') {
+      unheardWordsRef.current = wordProgress.incorrectWords
+    }
+    setCurrentWordIndex(0)
+    stopAudio()
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current)
+      timeoutRef.current = null
+    }
+    setUserInput("")
+
+    forceUpdate() // 强制重新渲染
+  }, [mode, selectedWordList.words, wordProgress.correctWords, wordProgress.incorrectWords])  // 根据模式和进度更新
 
   const currentWord = unheardWordsRef.current[currentWordIndex] || ""
 
@@ -123,9 +142,22 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
       translation: translation,
       errors: errors
     })
-    
-    // 更新单词进度
-    addWord(currentWord, errors.length === 0)
+
+    if (errors.length === 0) {
+      setcorrectCount(correctCount + 1)
+    } else {
+      setincorrectCount(incorrectCount + 1)
+    }
+
+    if (mode === 'normal') {
+      // 更新单词进度
+      addWord(currentWord, errors.length === 0)
+    } else if (mode === 'review') {
+      if (errors.length === 0) {
+        // 在复习模式下，答对则从错词中移除
+        removeIncorrectWord(currentWord)
+      }
+    }
 
     // 移动到下一个单词
     changeWord('next')
@@ -227,9 +259,9 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
   return (
     <div className="bg-white rounded-lg shadow-md p-6 max-w-2xl mx-auto">
       {isLoading ? (
-        <p>加载词典中...</p>
+        <p>Loading dicatation...</p>
       ) : error ? (
-        <p>错误：{error}</p>
+        <p>Error：{error}</p>
       ) : (
         <>
           <div className="text-center mb-8">
@@ -238,7 +270,7 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
                 type="text"
                 value={userInput}
                 onChange={handleInputChange}
-                placeholder="输入单词"
+                placeholder="Type the word here"
                 className="flex-grow text-4xl font-bold text-gray-700 border-t-0 border-x-0 border-b-2 focus:ring-0 focus:border-gray-300 placeholder-gray-300 h-20 flex items-center justify-center text-center"
               />
             </form>
@@ -253,7 +285,7 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>返回 (←)</p>
+                  <p>Return (←)</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -266,7 +298,7 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>播放/暂停 (空格)</p>
+                  <p>Play/Pause (Space)</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -279,7 +311,7 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>重播 (↑)</p>
+                  <p>Replay (↑)</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -299,7 +331,7 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
               </DrawerTrigger>
               <DrawerContent>
                 <DrawerHeader>
-                  <DrawerTitle>已听写的单词</DrawerTitle>
+                  <DrawerTitle>Dictated words</DrawerTitle>
                 </DrawerHeader>
                 <div className="flex flex-col h-[calc(50vh-2rem)] overflow-hidden">
                   <div className="flex-grow overflow-y-auto">
@@ -324,26 +356,37 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
           )}
 
           <div className="relative pt-4">
-                <div className="flex mb-2 items-center justify-between">
-                  <div>
-                  <span className={`text-xs font-semibold inline-block py-1 uppercase rounded-full ${accuracyColor} bg-opacity-20`}>
+            <div className="flex mb-2 items-center justify-between">
+              <div>
+                <span className={`text-xs font-semibold inline-block py-1 uppercase rounded-full ${accuracyColor} bg-opacity-20`}>
                   Accuracy
                 </span>
-                  </div>
-                  <div className="text-right">
-                  <span className={`text-xs font-semibold inline-block ${accuracyColor}`}>
-                      {Math.round(wordProgress.correctWords.length*100 / (wordProgress.correctWords.length+wordProgress.incorrectWords.length))}%
-                    </span>
-                  </div>
-                </div>
-                <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-gray-200">
-                <div style={{ width: `${Math.round(wordProgress.correctWords.length*100 / (wordProgress.correctWords.length+wordProgress.incorrectWords.length))}%` }} className={`shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center ${accuracyColor.replace('text', 'bg')}`}></div>
-                </div>
-                <div className="flex justify-between text-xs text-gray-600">
-                  <span>Correct: {wordProgress.correctWords.length}</span>
-                  <span>Incorrect: {wordProgress.incorrectWords.length}</span>
-                </div>
               </div>
+              <div className="text-right">
+                <span className={`text-xs font-semibold inline-block ${accuracyColor}`}>
+                  {accuracyPercentage}%
+                </span>
+              </div>
+            </div>
+            <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-gray-200">
+              <div style={{ width: `${accuracyPercentage}%` }} className={`shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center ${accuracyColor.replace('text', 'bg')}`}></div>
+            </div>
+            <div className="flex justify-between text-xs text-gray-600">
+              <span>Correct: {correctCount}</span>
+              <span>Incorrect: {incorrectCount}</span>
+            </div>
+          </div>
+
+          {/* 新增：开始复习按钮 */}
+          {wordProgress.incorrectWords.length > 0 && mode === 'normal' && (
+            <div className="mt-4 text-center">
+              <Button onClick={() => {
+                setMode('review')
+              }}>
+                Review
+              </Button>
+            </div>
+          )}
         </>
       )}
     </div>
