@@ -49,6 +49,11 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
     } else if (mode === 'review') {
       unheardWordsRef.current = wordProgress.incorrectWords
     }
+
+    if (settings.isRandomOrder) {
+      unheardWordsRef.current = shuffleArray(unheardWordsRef.current)
+    }
+  
     setCurrentWordIndex(0)
     stopAudio()
     if (timeoutRef.current) {
@@ -185,6 +190,17 @@ export default function DictationArea({ settings, selectedWordList }: DictationA
     // 重置剩余播放次数，确保单次播放不会触发自动提交
     remainingPlaysRef.current = settings.playCount
   }
+
+  function shuffleArray(array: any[]) {
+    const newArray = [...array]
+    for (let i = newArray.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[newArray[i], newArray[j]] = [newArray[j], newArray[i]]
+    }
+    return newArray
+  }
+  
+
 
   const togglePlay = useCallback(() => {
     setContinuousPlay(prev => {
