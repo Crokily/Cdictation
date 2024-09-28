@@ -14,7 +14,7 @@ export function useDictionary() {
   useEffect(() => {
     const loadDictionary = async () => {
       try {
-        const response = await fetch('/data/EnWords.csv');
+        const response = await fetch('https://file.coly.cc/EnWords.csv');
         const csvText = await response.text();
         
         Papa.parse(csvText, {
